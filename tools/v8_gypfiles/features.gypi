@@ -64,7 +64,7 @@
       }],
       ['OS == "win" or OS == "mac"', {
         # Sets -DENABLE_SYSTEM_INSTRUMENTATION. Enables OS-dependent event tracing
-        'v8_enable_system_instrumentation': 1,
+        'v8_enable_system_instrumentation': 0,
       }, {
         'v8_enable_system_instrumentation': 0,
       }],

@@ -39,6 +39,38 @@
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
 
+// --- Mac OS X 10.6 (Snow Leopard) compatibility -----------------------------
+#if defined(MAC_OS_X_VERSION_MIN_REQUIRED) && MAC_OS_X_VERSION_MIN_REQUIRED < 1070
+
+// VM_FLAGS_OVERWRITE is described in 10.6's <mach/vm_statistics.h> but the
+// macro is missing from that header. The kernel does honour it: a
+// mach_vm_remap(VM_FLAGS_FIXED | 0x4000) onto a live mapping returns
+// KERN_SUCCESS, lands on the requested address, and aliases the source pages.
+// Verified on this machine (Darwin 10.8.0, xnu-1504.15.3) before adding this.
+#ifndef VM_FLAGS_OVERWRITE
+#define VM_FLAGS_OVERWRITE 0x4000
+#endif
+
+// getsectiondata() arrived in 10.7. On 10.6 getsectdatafromheader() has the
+// same semantics for this use: both return the section's *unslid* vmaddr
+// (sp->addr), and the caller adds _dyld_get_image_vmaddr_slide() itself.
+// Only the 32-bit overload is provided; this build is i386 only, so the
+// mach_header_64 branch is preprocessed away.
+static inline uint8_t* getsectiondata(const struct mach_header* mhp,
+                                      const char* segname,
+                                      const char* sectname,
+                                      unsigned long* size) {
+  uint32_t sect_size = 0;
+  char* p = getsectdatafromheader(const_cast<struct mach_header*>(mhp),
+                                  segname, sectname, &sect_size);
+  *size = sect_size;
+  return reinterpret_cast<uint8_t*>(p);
+}
+
+#endif  // MAC_OS_X_VERSION_MIN_REQUIRED < 1070
+// ---------------------------------------------------------------------------
+
+
 #if defined(V8_TARGET_OS_IOS)
 #include "src/base/ios-headers.h"
 #else
@@ -87,7 +119,11 @@ std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
     const mach_header* header = _dyld_get_image_header(i);
     if (header == nullptr) continue;
     unsigned long size;
-#if V8_HOST_ARCH_I32
+// NOTE: upstream writes V8_HOST_ARCH_I32 here, a macro that is defined
+// nowhere in the V8 tree (the real name is V8_HOST_ARCH_IA32), so a
+// 32-bit build silently took the 64-bit path below and reinterpreted a
+// mach_header as a mach_header_64. Use the compiler predefine.
+#if defined(__i386__)
     uint8_t* code_ptr = getsectiondata(header, SEG_TEXT, SECT_TEXT, &size);
 #else
     const mach_header_64* header64 =
