@@ -117,6 +117,16 @@ build rather than starting over.
 - BSD `sed` requires the `-i` suffix to be attached (`-i.bak`). Writing
   `sed -i -E` consumes `-E` as the backup suffix and silently disables
   extended regular expressions.
+- **The 32-bit address space shows up at the archive step, not at compile
+  time.** With the default `-gdwarf-2 -g`, V8's `libv8_base_without_compiler.a`
+  is 3.6 GB, and Apple's `libtool` buffers the whole output archive in memory:
+  `can't vm_allocate() buffer for output file ... ((os/kern) no space
+  available)`. Debug information is most of that size. Strip it from the
+  objects in place (`strip -S` over `out/Release/obj.*/**/*.o`, minutes),
+  delete the partial archives, and compile everything after that with `-g0`;
+  gyp's makefiles do not track flag changes, so adding `-g0` does not
+  recompile the stripped objects. The same limit would otherwise hit the
+  `mksnapshot` and final `node` links.
 - Detach the build from the login session with `nohup ... < /dev/null`.
   Redirecting only stdout is not enough: with stdin still attached to an SSH
   pipe, `gmake` sleeps the moment that session closes, leaving the process
@@ -128,11 +138,15 @@ The build is in progress on the target and has not yet produced a binary.
 
 `configure` completes and records `target_arch: ia32` and `host_arch: ia32`
 with system ICU 78, shared OpenSSL 3 and shared zlib. With every patch above
-applied, the tree compiles through libuv, c-ares, googletest, simdutf, V8's
-base library and the first host-tool link, and has passed both the IA-32
-Liftoff WebAssembly baseline compiler and the IA-32 conservative-stack-scan
-assembly that stopped earlier attempts. Object count at the time of writing:
-1737 and rising, with no errors in the current run.
+applied, every object in the tree compiles: all 2604, including the whole of
+V8 (past the IA-32 Liftoff baseline compiler and the IA-32
+conservative-stack-scan assembly that stopped earlier attempts) and Node's own
+sources. The first attempt to archive V8 hit the 32-bit address space (see
+the build note above); the objects have since been stripped of debug
+information, the stale archives (2.4 GB of unstripped content) removed, and
+archiving is proceeding from the stripped objects, whose total is about
+95 MB. Still ahead at the time of writing: `mksnapshot`, snapshot
+generation, and the final `node` link.
 
 Nothing here is claimed as a working Node.js until `node -v` runs on the
 target. The two remaining unknowns are whether V8's IA-32 code generation
