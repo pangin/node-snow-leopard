@@ -1,0 +1,16 @@
+--- a/deps/v8/src/heap/base/asm/ia32/push_registers_asm.cc
++++ b/deps/v8/src/heap/base/asm/ia32/push_registers_asm.cc
+@@ -21,6 +21,13 @@
+ #ifdef _WIN32
+     ".globl _PushAllRegistersAndIterateStack            \n"
+     "_PushAllRegistersAndIterateStack:                  \n"
++#elif defined(__APPLE__)
++    // Mach-O (32-bit Darwin): C symbols carry a leading underscore, and the
++    // ELF directives .type/.hidden do not exist; .private_extern is the
++    // equivalent of .hidden. Mirrors the x64 file's Apple branch.
++    ".globl _PushAllRegistersAndIterateStack            \n"
++    ".private_extern _PushAllRegistersAndIterateStack   \n"
++    "_PushAllRegistersAndIterateStack:                  \n"
+ #else   // !_WIN32
+     ".globl PushAllRegistersAndIterateStack             \n"
+     ".type PushAllRegistersAndIterateStack, %function   \n"

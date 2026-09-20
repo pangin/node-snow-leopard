@@ -97,6 +97,12 @@ build rather than starting over.
   definitions failed to match their declarations. Linux and Windows i386
   define `uintptr_t` as `unsigned int`, which is why upstream, and the
   otherwise identical ARM backend, never see this.
+- Add a Mach-O branch to V8's IA-32 `push_registers_asm.cc`. The file only
+  distinguishes Win32 from "everything else" and emits the ELF directives
+  `.type` and `.hidden` for the latter, which the Darwin assembler rejects
+  as unknown. Mach-O needs the underscore-prefixed symbol and
+  `.private_extern`, exactly as the x64 file's existing Apple branch does.
+  The cdecl body is unchanged.
 
 ## Build notes
 
@@ -123,9 +129,10 @@ The build is in progress on the target and has not yet produced a binary.
 `configure` completes and records `target_arch: ia32` and `host_arch: ia32`
 with system ICU 78, shared OpenSSL 3 and shared zlib. With every patch above
 applied, the tree compiles through libuv, c-ares, googletest, simdutf, V8's
-base library and the first host-tool link, and has passed the IA-32 Liftoff
-WebAssembly baseline compiler that stopped the previous attempt. Object count
-at the time of writing: 1410 and rising, with no errors in the current run.
+base library and the first host-tool link, and has passed both the IA-32
+Liftoff WebAssembly baseline compiler and the IA-32 conservative-stack-scan
+assembly that stopped earlier attempts. Object count at the time of writing:
+1737 and rising, with no errors in the current run.
 
 Nothing here is claimed as a working Node.js until `node -v` runs on the
 target. The two remaining unknowns are whether V8's IA-32 code generation
