@@ -89,6 +89,14 @@ build rather than starting over.
   (the real name is `V8_HOST_ARCH_IA32`). A 32-bit build therefore took the
   64-bit branch and reinterpreted a `mach_header` as a `mach_header_64`. The
   guard now tests the compiler's own `__i386__` predefine.
+- Spell `offset_imm` as `uintptr_t` throughout V8's IA-32 Liftoff backend
+  (`liftoff-assembler-ia32.h`). The shared declarations in
+  `liftoff-assembler.h` use `uintptr_t`; the ia32 definitions used `uint32_t`.
+  On Darwin/i386 `uintptr_t` is `unsigned long`, a distinct type from
+  `unsigned int` at the same 32-bit width, so all eleven out-of-line member
+  definitions failed to match their declarations. Linux and Windows i386
+  define `uintptr_t` as `unsigned int`, which is why upstream, and the
+  otherwise identical ARM backend, never see this.
 
 ## Build notes
 
@@ -114,8 +122,10 @@ The build is in progress on the target and has not yet produced a binary.
 
 `configure` completes and records `target_arch: ia32` and `host_arch: ia32`
 with system ICU 78, shared OpenSSL 3 and shared zlib. With every patch above
-applied, the tree compiles through libuv, c-ares, googletest, simdutf and
-V8's base library, and reaches the first host-tool link.
+applied, the tree compiles through libuv, c-ares, googletest, simdutf, V8's
+base library and the first host-tool link, and has passed the IA-32 Liftoff
+WebAssembly baseline compiler that stopped the previous attempt. Object count
+at the time of writing: 1410 and rising, with no errors in the current run.
 
 Nothing here is claimed as a working Node.js until `node -v` runs on the
 target. The two remaining unknowns are whether V8's IA-32 code generation

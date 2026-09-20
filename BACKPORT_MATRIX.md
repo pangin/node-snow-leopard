@@ -24,6 +24,7 @@ first shipped the thing being relied on.
 | 14 | `V8_HOST_ARCH_I32` never defined (upstream defect) | n/a | V8 platform-darwin | Guard tests `__i386__` |
 | 15 | `python3` name not on `PATH` | n/a | gyp toolchain | Shim in the build script |
 | 16 | `tar` cannot read `.tar.xz` | n/a | host tooling | MacPorts `bsdtar` |
+| 17 | `uintptr_t` is `unsigned long` on Darwin/i386 but `unsigned int` on Linux/Windows i386 | n/a | V8 Liftoff ia32 | `offset_imm` spelled `uintptr_t` to match the shared declaration |
 
 Rows 4 and 5 need no source change: MacPorts `legacy-support` supplies them,
 provided its include directory precedes the 2009 system headers and the
