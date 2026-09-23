@@ -26,6 +26,8 @@ first shipped the thing being relied on.
 | 16 | `tar` cannot read `.tar.xz` | n/a | host tooling | MacPorts `bsdtar` |
 | 17 | `uintptr_t` is `unsigned long` on Darwin/i386 but `unsigned int` on Linux/Windows i386 | n/a | V8 Liftoff ia32 | `offset_imm` spelled `uintptr_t` to match the shared declaration |
 | 18 | IA-32 stack-scan assembly emits ELF `.type`/`.hidden` for every non-Win32 target | n/a | V8 heap/base asm ia32 | Mach-O branch with `_`-prefixed symbol and `.private_extern`, as the x64 file already has |
+| 19 | `std::__itoa::__u32toa`/`__u64toa` declared by libc++ 11 headers, absent from the libcxx 5.0.1 runtime | n/a | ada (via `std::to_chars`) | Link-time stubs in `snow-leopard/sl-cxxstubs.cc`, per libc++ 11 `charconv.cpp` |
+| 20 | V8 archive is 3.6 GB with debug info; libtool buffers it whole | n/a | build | `-g0`, and `strip -S` on objects already built |
 
 Rows 4 and 5 need no source change: MacPorts `legacy-support` supplies them,
 provided its include directory precedes the 2009 system headers and the
@@ -47,7 +49,7 @@ the flag; only the `#define` is missing.
 
 | Node.js line | Status |
 | --- | --- |
-| 20.19.5 | Patched; build in progress on the target |
+| 20.19.5 | Built, installed and runtime-verified on the target (2026-09-24) |
 | 20.x (other) | Not attempted |
 | 22.x, 24.x | Not attempted |
 | 18.x and earlier | Not attempted |

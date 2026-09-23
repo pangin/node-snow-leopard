@@ -114,6 +114,18 @@ It stops on success or on a real compile failure; it does not retry errors.
   as unknown. Mach-O needs the underscore-prefixed symbol and
   `.private_extern`, exactly as the x64 file's existing Apple branch does.
   The cdecl body is unchanged.
+- Supply `std::__itoa::__u32toa` and `__u64toa` at link time
+  (`snow-leopard/sl-cxxstubs.cc`). clang-11 compiles against libc++ 11
+  headers, whose `<charconv>` declares these as functions exported by the
+  libc++ dylib, but the libc++ linked on 10.6 is MacPorts `libcxx` 5.0.1,
+  which exports none of them (`nm` finds no `__itoa` symbol). Any
+  `std::to_chars` on an integer therefore fails to link; in Node that is the
+  bundled ada URL parser, so `cctest`, `node_mksnapshot` and `node` itself
+  all fail. The stubs follow libc++ 11's `src/charconv.cpp` (decimal digits,
+  no terminator, return one past the end) and were checked against
+  `snprintf` on 0 and the 32- and 64-bit maxima. MacPorts' own answer is its
+  `macports-libcxx` port, which `lang/nodejs20` depends on but which needs
+  root.
 
 ## Build notes
 
@@ -132,12 +144,27 @@ It stops on success or on a real compile failure; it does not retry errors.
   time.** With the default `-gdwarf-2 -g`, V8's `libv8_base_without_compiler.a`
   is 3.6 GB, and Apple's `libtool` buffers the whole output archive in memory:
   `can't vm_allocate() buffer for output file ... ((os/kern) no space
-  available)`. Debug information is most of that size. Strip it from the
-  objects in place (`strip -S` over `out/Release/obj.*/**/*.o`, minutes),
-  delete the partial archives, and compile everything after that with `-g0`;
-  gyp's makefiles do not track flag changes, so adding `-g0` does not
-  recompile the stripped objects. The same limit would otherwise hit the
-  `mksnapshot` and final `node` links.
+  available)`. Debug information is most of that size, so build with `-g0`
+  (`build-snow-leopard.sh` does). If a tree was already built with `-g`,
+  adding `-g0` recompiles everything, about ten hours on the target. Stripping
+  the objects (`strip -S`) shrinks the archives at once, but it does not save
+  that recompile. The same limit would otherwise hit the `mksnapshot` and
+  final `node` links.
+- **gyp's makefiles track command lines, not only timestamps.** Each target's
+  last command is recorded in `out/Release/.deps/<abs path>.d`, and
+  `command_changed` reruns the rule when it differs. Changing `CPPFLAGS`
+  therefore recompiles every object. Changing `LDFLAGS` relinks every
+  executable, including the code generators (`torque`,
+  `bytecode_builtins_list_generator`, `node_js2c`, `mksnapshot`). A relinked
+  generator is newer than its outputs, so its action reruns and everything
+  that includes those outputs recompiles; for `torque` that is over 900
+  objects. When only link inputs change, as with the `sl-cxxstubs.o` fix,
+  the generators' outputs are byte-identical. Stop the build right after
+  the new link command is recorded, give every file under `out/Release` one
+  timestamp (`find out/Release -type f -exec touch -t <stamp> {} +`), and
+  restart: only the rules whose command really changed run. `make -n` is no
+  guide here, because gyp's `FORCE_DO_CMD` prerequisites make a dry run
+  report a full rebuild.
 - **Detaching from SSH.** Redirecting only stdout is not enough: with stdin
   still attached to an SSH pipe, `gmake` sleeps the moment that session
   closes, leaving the process tree alive but idle. `nohup ... < /dev/null`
@@ -148,22 +175,36 @@ It stops on success or on a real compile failure; it does not retry errors.
   tree stopped on purpose with `kill -STOP` (state `T`) is not treated as a
   stall.
 
-## State
+## Verified behavior
 
-The build is in progress on the target and has not yet produced a binary.
+Built, installed and run on the target (Mac OS X 10.6.8, Darwin 10.8.0,
+Core Duo, 2 GB) on 2026-09-24:
 
-`configure` completes and records `target_arch: ia32` and `host_arch: ia32`
-with system ICU 78, shared OpenSSL 3 and shared zlib. With every patch above
-applied, every object in the tree compiles: all 2604, including the whole of
-V8 (past the IA-32 Liftoff baseline compiler and the IA-32
-conservative-stack-scan assembly that stopped earlier attempts) and Node's own
-sources. The first attempt to archive V8 hit the 32-bit address space (see
-the build note above); the objects have since been stripped of debug
-information, the stale archives (2.4 GB of unstripped content) removed, and
-archiving is proceeding from the stripped objects, whose total is about
-95 MB. Still ahead at the time of writing: `mksnapshot`, snapshot
-generation, and the final `node` link.
+```
+$ file ~/.local/node20/bin/node
+Mach-O executable i386
+$ node -v
+v20.19.5
+$ node -e 'console.log(process.arch, process.platform, os.release(), ...)'
+ia32 darwin 10.8.0
+```
 
-Nothing here is claimed as a working Node.js until `node -v` runs on the
-target. The two remaining unknowns are whether V8's IA-32 code generation
-completes under a 2 GB, 32-bit address space, and whether the final link fits.
+- `process.versions`: V8 11.3.244.8-node.30, OpenSSL 3.6.4, ICU 78.3.
+- `crypto` (SHA-256), `zlib` (gzip) and `Intl` (locale `en-US`) work.
+- Node's own HTTPS client completes a TLS handshake with `api.github.com`
+  and gets a 200.
+- npm 10.8.2, npx and corepack 0.33.0 are installed and run; `npm view`
+  reaches the public registry over TLS.
+- The whole tree builds: V8 including `mksnapshot` and snapshot generation,
+  `node_mksnapshot`, `cctest`, `embedtest` and `node` (38.9 MB).
+- `otool -L` resolves every library: legacy-support, MacPorts zlib,
+  OpenSSL 3 and ICU 78, CoreFoundation, libSystem, and libc++ / libc++abi
+  5.0.1.
+
+Not yet exercised on the target: Node's own test suite (`cctest` built but
+not run), and long-running workloads. Real programs running on this build are
+tracked in [snow-leopard-devenv](https://github.com/pangin/snow-leopard-devenv).
+
+Wall-clock on this hardware: the complete compile is about ten hours with
+`-g0` on two 1.83 GHz cores. It took several days of attempts in practice,
+because every gap above was found by a failed build.

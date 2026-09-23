@@ -45,9 +45,24 @@ CXX_BIN=$MP/bin/clang++-mp-11
 LS_INC="-I$MP/include/LegacySupport"
 LS_LIB="-L$MP/lib -lMacportsLegacySupport"
 
+# clang-11 compiles against libc++ 11 headers, but the libc++ linked on 10.6 is
+# MacPorts libcxx 5.0.1, which lacks std::__itoa::__u32toa/__u64toa (used by
+# std::to_chars, e.g. in the bundled ada URL parser). snow-leopard/sl-cxxstubs.cc
+# supplies them; see BACKPORT_MATRIX.md row 19.
+STUBS_SRC=$WORK/snow-leopard/sl-cxxstubs.cc
+STUBS_OBJ=$WORK/out/sl-cxxstubs.o
+build_stubs() {
+  [ -f "$STUBS_OBJ" ] && [ "$STUBS_OBJ" -nt "$STUBS_SRC" ] && return 0
+  mkdir -p "$WORK/out"
+  "$CXX_BIN" -arch i386 -std=c++17 -O2 -g0 -mmacosx-version-min=10.6 -c -o "$STUBS_OBJ" "$STUBS_SRC"
+}
+LS_LIB="$LS_LIB $STUBS_OBJ"
+
 # Platform constants Snow Leopard does not provide. See BACKPORT_MATRIX.md
 # rows 6-13 for what each one stands in for.
-DEFS="-DUV_NO_SSM -DUV_NO_POSIX_SPAWN -DMAP_JIT=0"
+# -g0: with debug info V8's archive is 3.6 GB and libtool, which buffers the
+# whole archive in memory, cannot allocate it in a 32-bit address space.
+DEFS="-DUV_NO_SSM -DUV_NO_POSIX_SPAWN -DMAP_JIT=0 -g0"
 
 CPP_ALL="$LS_INC $DEFS"
 
@@ -70,6 +85,7 @@ do_configure() {
 do_build() {
   cd "$WORK" || exit 1
   [ -f Makefile ] || { echo "not configured yet; run: $0 configure"; exit 1; }
+  build_stubs || { echo "could not build $STUBS_OBJ"; exit 1; }
   [ -f "$LOG" ] && mv "$LOG" "$LOG.prev"
   {
     echo "=== gmake -j$JOBS started $(date) ==="
@@ -111,7 +127,11 @@ case "${1:-build}" in
     exit $rc
     ;;
   install)
-    "$MP/bin/gmake" install PREFIX="$PREFIX" && "$PREFIX/bin/node" -v
+    # Not "make install": it depends on "all", which re-runs make without the
+    # flag variables above (recompiling libuv without LegacySupport, which
+    # fails) and defaults PREFIX to /usr/local. Call the installer directly.
+    cd "$WORK" && "$PY" tools/install.py install --dest-dir '' --prefix "$PREFIX" \
+      && "$PREFIX/bin/node" -v && PATH="$PREFIX/bin:$PATH" npm -v
     ;;
   status)
     echo "status : $(cat "$STATUS" 2>/dev/null || echo 'never run')"
