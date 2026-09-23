@@ -50,6 +50,17 @@ tree (`gyp-mac-tool` among them) resolve without touching the MacPorts prefix.
 `build-snow-leopard.sh` is resumable: re-running it continues an interrupted
 build rather than starting over.
 
+On the target the build takes days. Over SSH, run it under the supervisor
+instead, which detaches into its own session and restarts the build if it
+goes quiet without finishing:
+
+```sh
+/opt/local/bin/python3.14 snow-leopard/supervise.py --daemon
+tail -f snow-leopard-supervise.log
+```
+
+It stops on success or on a real compile failure; it does not retry errors.
+
 ## Compatibility changes
 
 - Remove the `MACOSX_DEPLOYMENT_TARGET: 10.15` pin from `common.gypi`. It
@@ -127,10 +138,15 @@ build rather than starting over.
   gyp's makefiles do not track flag changes, so adding `-g0` does not
   recompile the stripped objects. The same limit would otherwise hit the
   `mksnapshot` and final `node` links.
-- Detach the build from the login session with `nohup ... < /dev/null`.
-  Redirecting only stdout is not enough: with stdin still attached to an SSH
-  pipe, `gmake` sleeps the moment that session closes, leaving the process
-  tree alive but idle.
+- **Detaching from SSH.** Redirecting only stdout is not enough: with stdin
+  still attached to an SSH pipe, `gmake` sleeps the moment that session
+  closes, leaving the process tree alive but idle. `nohup ... < /dev/null`
+  fixed that, yet on a later run `gmake` was again found sleeping with no
+  children and a log 65 hours stale, with no error recorded. 10.6 has no
+  `setsid(1)`, so `snow-leopard/supervise.py` calls `os.setsid()` itself and
+  also restarts the build when its log goes quiet with nothing compiling. A
+  tree stopped on purpose with `kill -STOP` (state `T`) is not treated as a
+  stall.
 
 ## State
 
